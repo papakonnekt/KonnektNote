@@ -27,22 +27,34 @@ interface HandleConfig {
 }
 
 // Define the sequence of potential handles
-// Define the sequence of potential handles, expanding beyond the initial 4
+// Define the sequence of potential handles, expanding beyond the initial ones
 const handleSequence: HandleConfig[] = [
-  // Cardinal directions first
-  { id: 'a', position: Position.Right, style: { right: '-4px' } }, // Right-Center
-  { id: 'b', position: Position.Left, style: { left: '-4px' } },   // Left-Center
-  { id: 'c', position: Position.Top, style: { top: '-4px' } },    // Top-Center
-  { id: 'd', position: Position.Bottom, style: { bottom: '-4px' } }, // Bottom-Center
+  // Cardinal directions first - we now use separate IDs for source and target
+  { id: 'a-source', position: Position.Right, style: { right: '-4px' } }, // Right-Center (source)
+  { id: 'a-target', position: Position.Right, style: { right: '-4px' } }, // Right-Center (target)
+  { id: 'b-source', position: Position.Left, style: { left: '-4px' } },   // Left-Center (source)
+  { id: 'b-target', position: Position.Left, style: { left: '-4px' } },   // Left-Center (target)
+  { id: 'c-source', position: Position.Top, style: { top: '-4px' } },    // Top-Center (source)
+  { id: 'c-target', position: Position.Top, style: { top: '-4px' } },    // Top-Center (target)
+  { id: 'd-source', position: Position.Bottom, style: { bottom: '-4px' } }, // Bottom-Center (source)
+  { id: 'd-target', position: Position.Bottom, style: { bottom: '-4px' } }, // Bottom-Center (target)
   // Intermediate points (using percentages for positioning)
-  { id: 'e', position: Position.Top, style: { top: '-4px', left: '25%' } }, // Top-Leftish
-  { id: 'f', position: Position.Top, style: { top: '-4px', left: '75%' } }, // Top-Rightish
-  { id: 'g', position: Position.Bottom, style: { bottom: '-4px', left: '25%' } }, // Bottom-Leftish
-  { id: 'h', position: Position.Bottom, style: { bottom: '-4px', left: '75%' } }, // Bottom-Rightish
-  { id: 'i', position: Position.Left, style: { left: '-4px', top: '25%' } }, // Left-Topish
-  { id: 'j', position: Position.Left, style: { left: '-4px', top: '75%' } }, // Left-Bottomish
-  { id: 'k', position: Position.Right, style: { right: '-4px', top: '25%' } }, // Right-Topish
-  { id: 'l', position: Position.Right, style: { right: '-4px', top: '75%' } }, // Right-Bottomish
+  { id: 'e-source', position: Position.Top, style: { top: '-4px', left: '25%' } }, // Top-Leftish (source)
+  { id: 'e-target', position: Position.Top, style: { top: '-4px', left: '25%' } }, // Top-Leftish (target)
+  { id: 'f-source', position: Position.Top, style: { top: '-4px', left: '75%' } }, // Top-Rightish (source)
+  { id: 'f-target', position: Position.Top, style: { top: '-4px', left: '75%' } }, // Top-Rightish (target)
+  { id: 'g-source', position: Position.Bottom, style: { bottom: '-4px', left: '25%' } }, // Bottom-Leftish (source)
+  { id: 'g-target', position: Position.Bottom, style: { bottom: '-4px', left: '25%' } }, // Bottom-Leftish (target)
+  { id: 'h-source', position: Position.Bottom, style: { bottom: '-4px', left: '75%' } }, // Bottom-Rightish (source)
+  { id: 'h-target', position: Position.Bottom, style: { bottom: '-4px', left: '75%' } }, // Bottom-Rightish (target)
+  { id: 'i-source', position: Position.Left, style: { left: '-4px', top: '25%' } }, // Left-Topish (source)
+  { id: 'i-target', position: Position.Left, style: { left: '-4px', top: '25%' } }, // Left-Topish (target)
+  { id: 'j-source', position: Position.Left, style: { left: '-4px', top: '75%' } }, // Left-Bottomish (source)
+  { id: 'j-target', position: Position.Left, style: { left: '-4px', top: '75%' } }, // Left-Bottomish (target)
+  { id: 'k-source', position: Position.Right, style: { right: '-4px', top: '25%' } }, // Right-Topish (source)
+  { id: 'k-target', position: Position.Right, style: { right: '-4px', top: '25%' } }, // Right-Topish (target)
+  { id: 'l-source', position: Position.Right, style: { right: '-4px', top: '75%' } }, // Right-Bottomish (source)
+  { id: 'l-target', position: Position.Right, style: { right: '-4px', top: '75%' } }, // Right-Bottomish (target)
   // Add more if needed...
 ];
 
@@ -312,18 +324,32 @@ const BubbleNode: React.FC<BubbleNodeProps> = ({ id, data, selected, isConnectab
 
   return (
     <div ref={nodeRef} style={bubbleStyle} onDoubleClick={handleDoubleClick}>
-      {/* Connection handles (restored) */}
+      {/* Connection handles - both sides can be source or target */}
       <Handle
         type="source"
         position={Position.Right}
-        id="a"
+        id="a-source"
         isConnectable={isConnectable}
-        style={{ background: '#555', width: '8px', height: '8px', borderRadius: '4px', right: '-4px' }} // Adjusted position slightly
+        style={{ background: '#555', width: '8px', height: '8px', borderRadius: '4px', right: '-4px' }}
       />
-       <Handle
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="a-target"
+        isConnectable={isConnectable}
+        style={{ background: '#555', width: '8px', height: '8px', borderRadius: '4px', right: '-4px' }}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="b-source"
+        isConnectable={isConnectable}
+        style={{ background: '#555', width: '8px', height: '8px', borderRadius: '4px', left: '-4px' }}
+      />
+      <Handle
         type="target"
         position={Position.Left}
-        id="b"
+        id="b-target"
         isConnectable={isConnectable}
         style={{ background: '#555', width: '8px', height: '8px', borderRadius: '4px', left: '-4px' }}
       />
@@ -337,12 +363,17 @@ const BubbleNode: React.FC<BubbleNodeProps> = ({ id, data, selected, isConnectab
 
         handleSequence.forEach((handleConfig) => {
           const isUsed = usedIds.has(handleConfig.id);
+          // Determine if this is a source or target handle based on the ID
+          const isSourceHandle = handleConfig.id.endsWith('-source');
+          const isTargetHandle = handleConfig.id.endsWith('-target');
+          const handleType = isSourceHandle ? 'source' : isTargetHandle ? 'target' : 'source';
+
           if (isUsed) {
             // Render used handles
             handlesToRender.push(
               <Handle
                 key={handleConfig.id}
-                type="source" // Allow source/target from any handle
+                type={handleType}
                 position={handleConfig.position}
                 id={handleConfig.id}
                 isConnectable={isConnectable}
@@ -355,7 +386,7 @@ const BubbleNode: React.FC<BubbleNodeProps> = ({ id, data, selected, isConnectab
             handlesToRender.push(
               <Handle
                 key={handleConfig.id}
-                type="source" // Allow source/target from any handle
+                type={handleType}
                 position={handleConfig.position}
                 id={handleConfig.id}
                 isConnectable={isConnectable}
@@ -367,24 +398,8 @@ const BubbleNode: React.FC<BubbleNodeProps> = ({ id, data, selected, isConnectab
           }
         });
 
-        // Ensure default handles 'a' and 'b' are always present if not already rendered
-        // This covers the initial state and ensures they don't disappear if unused temporarily
-        if (!renderedHandleIds.has('a')) {
-             handlesToRender.push(
-                <Handle
-                    key="a" type="source" position={Position.Right} id="a" isConnectable={isConnectable}
-                    style={{ ...styles.dynamicHandle, right: '-4px' }}
-                />
-             );
-        }
-         if (!renderedHandleIds.has('b')) {
-             handlesToRender.push(
-                <Handle
-                    key="b" type="target" position={Position.Left} id="b" isConnectable={isConnectable}
-                    style={{ ...styles.dynamicHandle, left: '-4px' }}
-                />
-             );
-        }
+        // We no longer need to ensure default handles are present since we've added them explicitly above
+        // The dynamic handles below are for additional connection points beyond the default left and right
 
         return handlesToRender;
       })()}

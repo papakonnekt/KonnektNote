@@ -58,8 +58,6 @@ interface GraphInfo {
   title: string;
 }
 
-let idCounter = 0;
-
 // Define custom node types OUTSIDE the component
 const nodeTypes = {
     bubble: BubbleNode,
@@ -80,9 +78,7 @@ const GraphViewInternal: React.FC = () => {
   const navigate = useNavigate(); // Get navigate function
   const { token, isLoading: isAuthLoading } = useAuth(); // Get token and loading state
 
-  useEffect(() => {
-      idCounter = nodes.reduce((maxId: number, node: Node) => Math.max(maxId, parseInt(node.id, 10) || 0), 0) + 1;
-  }, [nodes]);
+  // We're now using timestamp-based IDs for nodes, so we don't need to track a counter
 
   // --- Data Fetching Helpers ---
   const loadGraphs = useCallback(async () => { // Renamed from loadChecklists
@@ -341,23 +337,43 @@ const GraphViewInternal: React.FC = () => {
   const addNode = useCallback(async () => {
     if (!activeGraphId) return;
     setError(null);
-    const newNodeId = `${idCounter++}`;
+
+    // Generate a unique ID for the new node
+    const newNodeId = `node-${Date.now()}`;
+
+    // Calculate position in the center of the viewport
     const position = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 3 });
+
+    // Create the node data to send to the server
     const newNodeData: nodeService.NewNodeInput = {
         id: newNodeId,
         type: 'bubble',
         position,
-        data: { label: `New Bubble ${newNodeId}` },
+        data: { label: `New Bubble ${newNodeId.slice(-5)}` }, // Use shorter ID in label
     };
+
+    // Create the node for ReactFlow
     const newNodeForFlow: Node<NodeData> = {
         id: newNodeId,
         type: 'bubble',
         position,
-        data: { label: newNodeData.data.label || '', graphId: activeGraphId, usedHandleIds: new Set() }
+        positionAbsolute: position, // Add positionAbsolute to ensure ReactFlow uses the correct position
+        data: {
+            label: newNodeData.data.label || '',
+            graphId: activeGraphId,
+            usedHandleIds: new Set(),
+            content: '',
+            image_url: null
+        }
     };
+
+    // Add the node to the local state first for immediate feedback
     setNodes((nds) => nds.concat(newNodeForFlow));
+
     try {
         console.log("Creating new node with data:", newNodeData);
+
+        // Send the node data to the server
         const createdNode = await nodeService.createNode(activeGraphId, newNodeData);
         console.log("Node created successfully:", createdNode);
 
@@ -379,6 +395,8 @@ const GraphViewInternal: React.FC = () => {
     } catch (err) {
         console.error("[addNode] API call failed:", err);
         setError("Failed to save new node. Please try again.");
+
+        // Remove the node from the local state if the server request failed
         setNodes((nds) => nds.filter((n) => n.id !== newNodeId));
     }
   }, [screenToFlowPosition, activeGraphId]);
@@ -390,30 +408,68 @@ const GraphViewInternal: React.FC = () => {
     setSelectedElement(clickedEdge);
     if (!activeGraphId) return;
     setError(null);
-    const currentMarkerEnd = clickedEdge.markerEnd;
-    const currentMarkerStart = clickedEdge.markerStart;
+
+    // Get current marker states
+    const hasMarkerStart = !!clickedEdge.markerStart;
+    const hasMarkerEnd = !!clickedEdge.markerEnd;
+
+    // Define the next state based on current state
     let nextMarkerStartType: MarkerType | undefined | null = undefined;
     let nextMarkerEndType: MarkerType | undefined | null = undefined;
-    if (!currentMarkerStart && !currentMarkerEnd) {
+
+    // Implement the full cycle:
+    // 1. No arrows -> Arrow at end
+    // 2. Arrow at end -> Arrows at both ends
+    // 3. Arrows at both ends -> Arrow at start
+    // 4. Arrow at start -> No arrows (back to beginning)
+
+    if (!hasMarkerStart && !hasMarkerEnd) {
+        // Case 1: No arrows -> Arrow at end
+        console.log("Case 1: Adding arrow at end");
         nextMarkerEndType = MarkerType.ArrowClosed;
-    } else if (!currentMarkerStart && currentMarkerEnd) {
+        nextMarkerStartType = null;
+    } else if (!hasMarkerStart && hasMarkerEnd) {
+        // Case 2: Arrow at end -> Arrows at both ends
+        console.log("Case 2: Adding arrows at both ends");
+        nextMarkerEndType = MarkerType.ArrowClosed;
         nextMarkerStartType = MarkerType.ArrowClosed;
+    } else if (hasMarkerStart && hasMarkerEnd) {
+        // Case 3: Arrows at both ends -> Arrow at start
+        console.log("Case 3: Keeping only arrow at start");
+        nextMarkerEndType = null;
+        nextMarkerStartType = MarkerType.ArrowClosed;
+    } else if (hasMarkerStart && !hasMarkerEnd) {
+        // Case 4: Arrow at start -> No arrows
+        console.log("Case 4: Removing all arrows");
+        nextMarkerEndType = null;
+        nextMarkerStartType = null;
     }
+
+    console.log("Current state:", { hasMarkerStart, hasMarkerEnd });
+    console.log("Next state:", { nextMarkerStartType, nextMarkerEndType });
+
     const updateData: edgeService.UpdateEdgeInput = {
         markerStart: nextMarkerStartType,
         markerEnd: nextMarkerEndType,
     };
+
     const updatedEdgeForFlow = {
         ...clickedEdge,
         markerStart: nextMarkerStartType ? { type: nextMarkerStartType } : undefined,
         markerEnd: nextMarkerEndType ? { type: nextMarkerEndType } : undefined,
     };
+
+    // Update local state first for immediate feedback
     setEdges((eds) => eds.map((e) => e.id === clickedEdge.id ? updatedEdgeForFlow : e));
+
     try {
-        await edgeService.updateEdge(activeGraphId, clickedEdge.id, updateData);
+        // Then update the server
+        const updatedEdge = await edgeService.updateEdge(activeGraphId, clickedEdge.id, updateData);
+        console.log("Edge updated successfully:", updatedEdge);
     } catch (err) {
         console.error("Failed to update edge markers:", err);
         setError("Failed to update connection style.");
+        // Revert to original state on error
         setEdges((eds) => eds.map((e) => e.id === clickedEdge.id ? clickedEdge : e));
     }
   }, [activeGraphId]);
