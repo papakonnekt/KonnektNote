@@ -137,10 +137,21 @@ const GraphViewInternal: React.FC = () => {
         edgeService.getEdges(graphId),
       ]);
 
-      const flowNodes = fetchedNodes.map(dbNode => ({
+      // Log the fetched nodes to verify positions
+      console.log('Fetched nodes from server:', fetchedNodes);
+
+      const flowNodes = fetchedNodes.map(dbNode => {
+        // Ensure position values are valid numbers
+        const x = isNaN(dbNode.position_x) ? 0 : dbNode.position_x;
+        const y = isNaN(dbNode.position_y) ? 0 : dbNode.position_y;
+
+        console.log(`Node ${dbNode.id} position from server: (${x}, ${y})`);
+
+        return {
           id: dbNode.id,
           type: dbNode.type || 'bubble',
-          position: { x: dbNode.position_x, y: dbNode.position_y },
+          position: { x, y },
+          positionAbsolute: { x, y }, // Add positionAbsolute to ensure ReactFlow uses the correct position
           data: {
               label: dbNode.data_label || 'Untitled',
               graphId: dbNode.graph_id,
@@ -154,7 +165,8 @@ const GraphViewInternal: React.FC = () => {
                  height: dbNode.style_height ?? undefined,
                }}
              : {}),
-      }));
+        };
+      });
 
        const flowEdges = fetchedEdges.map(dbEdge => ({
           id: dbEdge.id,
@@ -234,14 +246,40 @@ const GraphViewInternal: React.FC = () => {
         console.log(`Debounced update for node ${nodeId}:`, position);
         setError(null);
         try {
-          const updateData: nodeService.UpdateNodeInput = { position };
-          await nodeService.updateNode(activeGraphId, nodeId, updateData);
+          // Ensure position values are valid numbers
+          const validPosition = {
+            x: isNaN(position.x) ? 0 : position.x,
+            y: isNaN(position.y) ? 0 : position.y
+          };
+
+          const updateData: nodeService.UpdateNodeInput = { position: validPosition };
+          console.log(`Sending position update for node ${nodeId}:`, updateData);
+
+          // Make the API call to update the position
+          const updatedNode = await nodeService.updateNode(activeGraphId, nodeId, updateData);
+          console.log(`Node position updated successfully:`, updatedNode);
+
+          // Verify the position was updated correctly
+          if (updatedNode.position_x !== validPosition.x || updatedNode.position_y !== validPosition.y) {
+            console.warn(`Position mismatch after update: sent (${validPosition.x}, ${validPosition.y}), received (${updatedNode.position_x}, ${updatedNode.position_y})`);
+
+            // Update the node in the local state with the correct position from the server
+            setNodes(nds => nds.map(n => {
+              if (n.id === nodeId) {
+                return {
+                  ...n,
+                  position: { x: updatedNode.position_x, y: updatedNode.position_y }
+                };
+              }
+              return n;
+            }));
+          }
         } catch (err) {
           console.error(`Failed to update position for node ${nodeId}:`, err);
           setError(`Failed to save position for node ${nodeId}.`);
           fetchNodesAndEdges(activeGraphId); // Refetch on error
         }
-      }, 750),
+      }, 500), // Reduced debounce time for more responsive updates
     [activeGraphId, fetchNodesAndEdges]
   );
 
@@ -254,14 +292,26 @@ const GraphViewInternal: React.FC = () => {
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      setNodes((nds) => applyNodeChanges(changes, nds));
-      changes.forEach((change) => {
-        if (change.type === 'position' && change.position && !change.dragging) {
-          debouncedUpdateNodePosition(change.id, change.position);
-        }
+      // Apply changes to local state first
+      setNodes((nds) => {
+        const updatedNodes = applyNodeChanges(changes, nds);
+
+        // For each position change that's not during dragging, save to the server
+        changes.forEach((change) => {
+          if (change.type === 'position' && change.position && !change.dragging) {
+            console.log(`Node position change detected for ${change.id}:`, change.position);
+            // Use a non-debounced immediate update to ensure positions are saved
+            if (activeGraphId) {
+              // We'll still use the debounced version to avoid too many API calls
+              debouncedUpdateNodePosition(change.id, change.position);
+            }
+          }
+        });
+
+        return updatedNodes;
       });
     },
-    [debouncedUpdateNodePosition]
+    [debouncedUpdateNodePosition, activeGraphId]
   );
 
   const onEdgesChange: OnEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
@@ -307,7 +357,25 @@ const GraphViewInternal: React.FC = () => {
     };
     setNodes((nds) => nds.concat(newNodeForFlow));
     try {
-        await nodeService.createNode(activeGraphId, newNodeData);
+        console.log("Creating new node with data:", newNodeData);
+        const createdNode = await nodeService.createNode(activeGraphId, newNodeData);
+        console.log("Node created successfully:", createdNode);
+
+        // Update the node in the state with the data from the server
+        setNodes((nds) => nds.map(n => {
+            if (n.id === newNodeId) {
+                return {
+                    ...n,
+                    data: {
+                        ...n.data,
+                        label: createdNode.data_label || n.data.label,
+                        content: createdNode.data_content || '',
+                        image_url: createdNode.image_url || null,
+                    }
+                };
+            }
+            return n;
+        }));
     } catch (err) {
         console.error("[addNode] API call failed:", err);
         setError("Failed to save new node. Please try again.");
@@ -315,7 +383,7 @@ const GraphViewInternal: React.FC = () => {
     }
   }, [screenToFlowPosition, activeGraphId]);
 
-  const onNodeClick: NodeMouseHandler = useCallback((event: React.MouseEvent, node: Node<NodeData>) => setSelectedElement(node), []);
+  const onNodeClick: NodeMouseHandler = useCallback((_event: React.MouseEvent, node: Node<NodeData>) => setSelectedElement(node), []);
 
   const onEdgeClick: EdgeMouseHandler = useCallback(async (event, clickedEdge) => {
     event.stopPropagation();
@@ -375,7 +443,14 @@ const GraphViewInternal: React.FC = () => {
       });
       try {
           const updateData: nodeService.UpdateNodeInput = { data: { label: newLabel } };
-          await nodeService.updateNode(activeGraphId, nodeId, updateData);
+          console.log(`Sending label update for node ${nodeId}:`, updateData);
+          const updatedNode = await nodeService.updateNode(activeGraphId, nodeId, updateData);
+          console.log(`Node label updated successfully:`, updatedNode);
+
+          // Verify the label was updated correctly
+          if (updatedNode.data_label !== newLabel) {
+            console.warn(`Label mismatch after update: sent "${newLabel}", received "${updatedNode.data_label}"`);
+          }
       } catch (err) {
           console.error("Failed to update node label:", err);
           setError("Failed to save label change.");
@@ -444,7 +519,14 @@ const GraphViewInternal: React.FC = () => {
        );
        try {
            const updateData: nodeService.UpdateNodeInput = { style: { width, height } };
-           await nodeService.updateNode(activeGraphId, nodeId, updateData);
+           console.log(`Sending size update for node ${nodeId}:`, updateData);
+           const updatedNode = await nodeService.updateNode(activeGraphId, nodeId, updateData);
+           console.log(`Node size updated successfully:`, updatedNode);
+
+           // Verify the size was updated correctly
+           if (updatedNode.style_width !== width || updatedNode.style_height !== height) {
+             console.warn(`Size mismatch after update: sent (${width}, ${height}), received (${updatedNode.style_width}, ${updatedNode.style_height})`);
+           }
        } catch (err) {
            console.error("Failed to update node size:", err);
            setError("Failed to save size change.");
@@ -461,18 +543,43 @@ const GraphViewInternal: React.FC = () => {
 
   const handleNodeImageLink = useCallback(async (nodeId: string, imageUrl: string | null) => {
       if (!activeGraphId) return;
+
+      // Update local state first for immediate feedback
       const updateNodes = (nds: Node<NodeData>[]) => nds.map(n =>
           n.id === nodeId ? { ...n, data: { ...n.data, image_url: imageUrl } } : n
       );
       setNodes(updateNodes);
+
       setSelectedElement(prev => {
           if (prev && prev.id === nodeId && 'data' in prev) {
               return { ...prev, data: { ...(prev as Node<NodeData>).data, image_url: imageUrl } };
           }
           return prev;
       });
-      // API call is handled within BubbleNode
-  }, [activeGraphId]);
+
+      // Make API call to update the node image
+      try {
+          const updateData: nodeService.UpdateNodeInput = { image_url: imageUrl };
+          console.log(`Sending image update for node ${nodeId}:`, updateData);
+          const updatedNode = await nodeService.updateNode(activeGraphId, nodeId, updateData);
+          console.log(`Node image updated successfully:`, updatedNode);
+
+          // Verify the image URL was updated correctly
+          if (updatedNode.image_url !== imageUrl) {
+              console.warn(`Image URL mismatch after update: sent "${imageUrl}", received "${updatedNode.image_url}"`);
+          }
+      } catch (err) {
+          console.error(`Failed to update image for node ${nodeId}:`, err);
+          setError(`Failed to save image for node ${nodeId}.`);
+          // Revert on error
+          setNodes(nds => nds.map(n => {
+              if (n.id === nodeId) {
+                  return { ...n, data: { ...n.data, image_url: null } };
+              }
+              return n;
+          }));
+      }
+  }, [activeGraphId, nodeService]);
 
   const handleCreateGraph = useCallback(async (title: string) => {
       setError(null);
@@ -595,6 +702,15 @@ const GraphViewInternal: React.FC = () => {
                             maxZoom={2}
                             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
                             className="react-flow-subflows-example"
+                            snapToGrid={false}
+                            snapGrid={[15, 15]}
+                            onNodeDragStop={(_event, node) => {
+                                // Save node position when drag stops
+                                if (activeGraphId) {
+                                    console.log(`Node drag stopped for ${node.id} at position:`, node.position);
+                                    debouncedUpdateNodePosition(node.id, node.position);
+                                }
+                            }}
                         >
                             <Controls />
                             <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
